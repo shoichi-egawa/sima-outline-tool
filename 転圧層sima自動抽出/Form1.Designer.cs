@@ -43,11 +43,12 @@ namespace いきなりSIMAと外周線_ver2._0
             // 
             // chkLayerList
             // 
+            chkLayerList.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             chkLayerList.FormattingEnabled = true;
             chkLayerList.Location = new Point(12, 182);
             chkLayerList.Name = "chkLayerList";
-            chkLayerList.Size = new Size(265, 562);
-            chkLayerList.TabIndex = 3;
+            chkLayerList.Size = new Size(273, 508);
+            chkLayerList.TabIndex = 8;
             // 
             // lblFilePath
             // 
@@ -55,7 +56,7 @@ namespace いきなりSIMAと外周線_ver2._0
             lblFilePath.Location = new Point(172, 48);
             lblFilePath.Name = "lblFilePath";
             lblFilePath.Size = new Size(77, 15);
-            lblFilePath.TabIndex = 2;
+            lblFilePath.TabIndex = 9;
             lblFilePath.Text = "ファイル未選択";
             lblFilePath.Click += lblFilePath_Click;
             // 
@@ -74,7 +75,7 @@ namespace いきなりSIMAと外周線_ver2._0
             btnSelectAll.Location = new Point(12, 150);
             btnSelectAll.Name = "btnSelectAll";
             btnSelectAll.Size = new Size(66, 26);
-            btnSelectAll.TabIndex = 4;
+            btnSelectAll.TabIndex = 6;
             btnSelectAll.Text = "全選択";
             btnSelectAll.UseVisualStyleBackColor = true;
             btnSelectAll.Click += btnSelectAll_Click;
@@ -84,18 +85,19 @@ namespace いきなりSIMAと外周線_ver2._0
             btnDeselectAll.Location = new Point(84, 150);
             btnDeselectAll.Name = "btnDeselectAll";
             btnDeselectAll.Size = new Size(66, 26);
-            btnDeselectAll.TabIndex = 5;
+            btnDeselectAll.TabIndex = 7;
             btnDeselectAll.Text = "全解除";
             btnDeselectAll.UseVisualStyleBackColor = true;
             btnDeselectAll.Click += btnDeselectAll_Click;
             // 
             // btnRun
             // 
+            btnRun.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             btnRun.Font = new Font("メイリオ", 9F, FontStyle.Regular, GraphicsUnit.Point, 128);
-            btnRun.Location = new Point(172, 750);
+            btnRun.Location = new Point(180, 694);
             btnRun.Name = "btnRun";
             btnRun.Size = new Size(105, 29);
-            btnRun.TabIndex = 7;
+            btnRun.TabIndex = 9;
             btnRun.Text = "SIMA出力実行";
             btnRun.UseVisualStyleBackColor = true;
             btnRun.Click += btnRun_Click;
@@ -106,7 +108,7 @@ namespace いきなりSIMAと外周線_ver2._0
             chkSimplify.Location = new Point(12, 101);
             chkSimplify.Name = "chkSimplify";
             chkSimplify.Size = new Size(97, 19);
-            chkSimplify.TabIndex = 8;
+            chkSimplify.TabIndex = 3;
             chkSimplify.Text = "折れ点 間引き";
             chkSimplify.UseVisualStyleBackColor = true;
             chkSimplify.CheckedChanged += chkSimplify_CheckedChanged;
@@ -120,7 +122,7 @@ namespace いきなりSIMAと外周線_ver2._0
             numTolerance.Minimum = new decimal(new int[] { 1, 0, 0, 65536 });
             numTolerance.Name = "numTolerance";
             numTolerance.Size = new Size(48, 23);
-            numTolerance.TabIndex = 9;
+            numTolerance.TabIndex = 4;
             numTolerance.Value = new decimal(new int[] { 20, 0, 0, 65536 });
             numTolerance.ValueChanged += numTolerance_ValueChanged;
             // 
@@ -140,7 +142,7 @@ namespace いきなりSIMAと外周線_ver2._0
             chkKeepZ.Location = new Point(12, 75);
             chkKeepZ.Name = "chkKeepZ";
             chkKeepZ.Size = new Size(129, 19);
-            chkKeepZ.TabIndex = 6;
+            chkKeepZ.TabIndex = 2;
             chkKeepZ.Text = "標高(Z値)も出力する";
             chkKeepZ.UseVisualStyleBackColor = true;
             chkKeepZ.CheckedChanged += checkBox1_CheckedChanged;
@@ -151,7 +153,7 @@ namespace いきなりSIMAと外周線_ver2._0
             chkBridgeIslands.Location = new Point(12, 125);
             chkBridgeIslands.Name = "chkBridgeIslands";
             chkBridgeIslands.Size = new Size(257, 19);
-            chkBridgeIslands.TabIndex = 11;
+            chkBridgeIslands.TabIndex = 5;
             chkBridgeIslands.Text = "同一層の複数小島を10cm幅ブリッジで結合する";
             chkBridgeIslands.UseVisualStyleBackColor = true;
             chkBridgeIslands.CheckedChanged += chkBridgeIslands_CheckedChanged;
@@ -160,8 +162,9 @@ namespace いきなりSIMAと外周線_ver2._0
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
+            AutoScroll = true;
             BackColor = SystemColors.GradientInactiveCaption;
-            ClientSize = new Size(296, 802);
+            ClientSize = new Size(304, 740);
             Controls.Add(chkBridgeIslands);
             Controls.Add(lblToleranceUnit);
             Controls.Add(numTolerance);
@@ -174,8 +177,12 @@ namespace いきなりSIMAと外周線_ver2._0
             Controls.Add(lblFilePath);
             Controls.Add(btnSelectFile);
             Controls.Add(txtKoujimei);
+            HelpButton = true;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            MinimumSize = new Size(320, 450);
             Name = "Form1";
-            Text = "いきなり SIMAと外周線";
+            Text = "いきなり SIMAと外周線 ver2.2";
             ((System.ComponentModel.ISupportInitialize)numTolerance).EndInit();
             ResumeLayout(false);
             PerformLayout();

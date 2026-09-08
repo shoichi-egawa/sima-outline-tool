@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -28,6 +30,78 @@ namespace いきなりSIMAと外周線_ver2._0
             InitializeComponent();
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             SendMessage(txtKoujimei.Handle, 0x1501, 1, "工事名を入力してください。例：〇〇工事");
+
+            // 小さな画面でボタンが見切れないよう自動スクロールを有効化
+            this.AutoScroll = true;
+
+            // ヘルプイベントの紐づけ（？ボタンやF1キー対応）
+            this.HelpRequested += new HelpEventHandler(Form1_HelpRequested);
+        }
+
+        /// <summary>
+        /// タイトルバーの「？」ボタンやF1キーが押された際、
+        /// exe内に埋め込まれたPDFマニュアルを展開して開く処理
+        /// </summary>
+        private void Form1_HelpRequested(object sender, HelpEventArgs hlpevent)
+        {
+            try
+            {
+                // 組み込みリソース名（プロジェクトのデフォルト名前空間.ファイル名.拡張子）
+                string resourceName = "いきなりSIMAと外周線_ver2._0.いきなりSIMAと外周線ver2.1とりせつ.pdf";
+
+                // 一時フォルダ（Temp）に書き出すパスを作成
+                string tempPdfPath = Path.Combine(Path.GetTempPath(), "manual_temp.pdf");
+
+                Assembly assembly = Assembly.GetExecutingAssembly();
+
+                // exe内部からPDFリソースをストリームとして読み込む
+                using (Stream? stream = assembly.GetManifestResourceStream(resourceName))
+                {
+                    if (stream == null)
+                    {
+                        // リソース名が見つからない場合のフォールバック（埋め込まれている全リソース名から.pdfを自動探索）
+                        string? foundName = assembly.GetManifestResourceNames()
+                            .FirstOrDefault(n => n.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
+
+                        if (foundName != null)
+                        {
+                            using (Stream fallbackStream = assembly.GetManifestResourceStream(foundName)!)
+                            using (FileStream fileStream = new FileStream(tempPdfPath, FileMode.Create, FileAccess.Write))
+                            {
+                                fallbackStream.CopyTo(fileStream);
+                            }
+                        }
+                        else
+                        {
+                            MessageBox.Show("埋め込まれたPDFマニュアルが見つかりませんでした。\nソリューションエクスプローラーでPDFの『ビルド アクション』が『埋め込まれたリソース』になっているか確認してください。",
+                                            "ヘルプ表示エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            hlpevent.Handled = true;
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        using (FileStream fileStream = new FileStream(tempPdfPath, FileMode.Create, FileAccess.Write))
+                        {
+                            stream.CopyTo(fileStream);
+                        }
+                    }
+                }
+
+                // 一時ファイルとして吐き出したPDFをOSの標準PDFビューアー（Edge, Chrome, Acrobat等）で開く
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = tempPdfPath,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"マニュアルの表示中にエラーが発生しました:\n\n{ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            // 標準のWindowsヘルプポップアップ動作をキャンセル
+            hlpevent.Handled = true;
         }
 
         private void btnSelectFile_Click(object sender, EventArgs e)
@@ -248,7 +322,6 @@ namespace いきなりSIMAと外周線_ver2._0
             catch (Exception ex) { MessageBox.Show(ex.Message); }
         }
 
-        // ▼ 改善版：すべての選択サーフェス（19個等）を確実に抽出して分割LandXMLを出力する処理 ▼
         private void ExportIndividualLandXmlZip(string xmlPath, List<string> selectedSurfaces, string shortKoujimei)
         {
             try
@@ -257,14 +330,11 @@ namespace いきなりSIMAと外周線_ver2._0
 
                 foreach (string sName in selectedSurfaces)
                 {
-                    // ループごとに元のXMLをフレッシュにロード
                     XDocument docCopy = XDocument.Load(xmlPath);
                     XNamespace ns = docCopy.Root?.Name.Namespace ?? "";
 
-                    // 全てのSurface要素を取得
                     var allSurfaces = docCopy.Descendants(ns + "Surface").ToList();
 
-                    // 該当サーフェス名以外のSurface要素をすべて削除
                     foreach (var s in allSurfaces)
                     {
                         string? name = (string?)s.Attribute("name");
@@ -274,7 +344,6 @@ namespace いきなりSIMAと外周線_ver2._0
                         }
                     }
 
-                    // 1つでも残っている場合、ファイルとして保存対象に登録
                     if (docCopy.Descendants(ns + "Surface").Any())
                     {
                         string fileName = $"{sName}.xml";
@@ -318,7 +387,6 @@ namespace いきなりSIMAと外周線_ver2._0
             }
         }
 
-        // ▼ 点と直線の離れ距離（垂線距離）計算 ▼
         private double GetPerpendicularDistance(Tuple<double, double, double> pt, Tuple<double, double, double> lineStart, Tuple<double, double, double> lineEnd)
         {
             double y0 = pt.Item1, x0 = pt.Item2;
@@ -335,7 +403,6 @@ namespace いきなりSIMAと外周線_ver2._0
             return num / Math.Sqrt(lenSq);
         }
 
-        // ▼ ダグラス・ペッカー法によるポリゴン間引き ▼
         private List<Tuple<double, double, double>> SimplifyPolygon(List<Tuple<double, double, double>> pts, double toleranceMeters)
         {
             if (pts.Count <= 3) return pts;
@@ -410,7 +477,6 @@ namespace いきなりSIMAと外周線_ver2._0
             }
         }
 
-        // --- グループ別トーン調整カラー配列 ---
         private netDxf.AciColor GetGroupedDistinctColor(int sequenceIndex)
         {
             double[] hues = new double[] { 0.0, 55.0, 120.0, 180.0, 240.0, 300.0, 30.0 };
@@ -465,7 +531,6 @@ namespace いきなりSIMAと外周線_ver2._0
             return new netDxf.AciColor((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
         }
 
-        // --- DXF/LandXML共通：レイヤー名維持・トーン着色・凡例生成・未選択レイヤーの完全描画保持 ---
         private void SaveNewDxfFromPolygonsWithLegend(
             Dictionary<string, List<List<Tuple<double, double, double>>>> processedPolygons,
             string outputPath,
@@ -669,7 +734,6 @@ namespace いきなりSIMAと外周線_ver2._0
             doc.Save(outputPath);
         }
 
-        // --- ねじれ防止の接続ロジック ---
         private List<Tuple<double, double, double>> ConnectTwoPolygonsBothSides(
             List<Tuple<double, double, double>> polyA,
             List<Tuple<double, double, double>> polyB, double widthMeters = 0.10)
@@ -1016,5 +1080,25 @@ namespace いきなりSIMAと外周線_ver2._0
         private void lblToleranceUnit_Click(object sender, EventArgs e) { }
         private void chkBridgeIslands_CheckedChanged(object sender, EventArgs e) { }
         private void Form1_Load(object sender, EventArgs e) { }
+
+        // Windowsメッセージを監視し、タイトルバーの「？」ボタンクリックを直接検出する
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_SYSCOMMAND = 0x0112;
+            const int SC_CONTEXTHELP = 0xF180;
+
+            // タイトルバーの「？」ボタンが押された瞬間をキャッチ
+            if (m.Msg == WM_SYSCOMMAND && (m.WParam.ToInt32() & 0xFFF0) == SC_CONTEXTHELP)
+            {
+                // ヘルプ要求イベント（Form1_HelpRequested）を直接呼び出してPDFを開く
+                HelpEventArgs args = new HelpEventArgs(System.Drawing.Point.Empty);
+                Form1_HelpRequested(this, args);
+
+                // Windows標準の「カーソルを？にする処理」をキャンセルして終了
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
     }
 }
