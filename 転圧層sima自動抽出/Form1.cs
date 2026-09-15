@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -25,41 +26,32 @@ namespace いきなりSIMAと外周線_ver2._0
         private const double TOLERANCE = 0.01;
         private const double MIN_AREA = 1.0;
 
+        // 手動選択（クリック）された図面上の任意の起点座標（Y, X）
+        private Tuple<double, double>? currentSelectedClickPoint = null;
+
         public Form1()
         {
             InitializeComponent();
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             SendMessage(txtKoujimei.Handle, 0x1501, 1, "工事名を入力してください。例：〇〇工事");
 
-            // 小さな画面でボタンが見切れないよう自動スクロールを有効化
             this.AutoScroll = true;
-
-            // ヘルプイベントの紐づけ（？ボタンやF1キー対応）
             this.HelpRequested += new HelpEventHandler(Form1_HelpRequested);
         }
 
-        /// <summary>
-        /// タイトルバーの「？」ボタンやF1キーが押された際、
-        /// exe内に埋め込まれたPDFマニュアルを展開して開く処理
-        /// </summary>
         private void Form1_HelpRequested(object sender, HelpEventArgs hlpevent)
         {
             try
             {
-                // 組み込みリソース名（プロジェクトのデフォルト名前空間.ファイル名.拡張子）
-                string resourceName = "いきなりSIMAと外周線_ver2._0.いきなりSIMAと外周線ver2.1とりせつ.pdf";
-
-                // 一時フォルダ（Temp）に書き出すパスを作成
+                string resourceName = "いきなりSIMAと外周線_ver2._0.いきなりSIMAと外周線ver2.3とりせつ.pdf";
                 string tempPdfPath = Path.Combine(Path.GetTempPath(), "manual_temp.pdf");
 
                 Assembly assembly = Assembly.GetExecutingAssembly();
 
-                // exe内部からPDFリソースをストリームとして読み込む
                 using (Stream? stream = assembly.GetManifestResourceStream(resourceName))
                 {
                     if (stream == null)
                     {
-                        // リソース名が見つからない場合のフォールバック（埋め込まれている全リソース名から.pdfを自動探索）
                         string? foundName = assembly.GetManifestResourceNames()
                             .FirstOrDefault(n => n.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase));
 
@@ -73,8 +65,7 @@ namespace いきなりSIMAと外周線_ver2._0
                         }
                         else
                         {
-                            MessageBox.Show("埋め込まれたPDFマニュアルが見つかりませんでした。\nソリューションエクスプローラーでPDFの『ビルド アクション』が『埋め込まれたリソース』になっているか確認してください。",
-                                            "ヘルプ表示エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            MessageBox.Show("埋め込まれたPDFマニュアルが見つかりませんでした。", "ヘルプ表示エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                             hlpevent.Handled = true;
                             return;
                         }
@@ -88,7 +79,6 @@ namespace いきなりSIMAと外周線_ver2._0
                     }
                 }
 
-                // 一時ファイルとして吐き出したPDFをOSの標準PDFビューアー（Edge, Chrome, Acrobat等）で開く
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = tempPdfPath,
@@ -100,7 +90,6 @@ namespace いきなりSIMAと外周線_ver2._0
                 MessageBox.Show($"マニュアルの表示中にエラーが発生しました:\n\n{ex.Message}", "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
-            // 標準のWindowsヘルプポップアップ動作をキャンセル
             hlpevent.Handled = true;
         }
 
@@ -188,9 +177,72 @@ namespace いきなりSIMAと外周線_ver2._0
                 return;
             }
 
+            currentSelectedClickPoint = null;
+
+            DxfDocument? dxfDoc = !isLandXmlMode ? DxfDocument.Load(selectedFilePath) : null;
+
+            // まず選択された全レイヤーの外周ポリゴンを抽出
+            List<List<Tuple<double, double, double>>> allExtractedPolygons = new List<List<Tuple<double, double, double>>>();
+            foreach (string layerName in selectedLayers)
+            {
+                var layerLines = isLandXmlMode ? GetLinesFromLandXmlSurface(selectedFilePath, layerName) : GetLinesFromLayer(dxfDoc, layerName);
+                if (layerLines.Count == 0) continue;
+
+                var outerPolygons = FindOuterPolygons(layerLines);
+                if (outerPolygons.Count == 0) continue;
+
+                if (chkSimplify.Checked)
+                {
+                    double toleranceMeters = (double)numTolerance.Value / 100.0;
+                    outerPolygons = outerPolygons.Select(p => SimplifyPolygon(p, toleranceMeters)).Where(p => p.Count >= 3).ToList();
+                }
+
+                if (chkBridgeIslands.Checked && outerPolygons.Count > 1)
+                {
+                    try
+                    {
+                        var merged = ConnectAllPolygonsWithBridges(outerPolygons, 0.10);
+                        if (merged != null && merged.Count >= 3) outerPolygons = new List<List<Tuple<double, double, double>>> { merged };
+                    }
+                    catch { }
+                }
+
+                allExtractedPolygons.AddRange(outerPolygons);
+            }
+
+            if (allExtractedPolygons.Count == 0)
+            {
+                MessageBox.Show("選択されたレイヤーから有効な外周線が抽出できませんでした。", "データなし", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // 【唯一の変更点】チェックボックス（chkManualStart）チェック時のみ、抽出した外周ポリゴン群をプレビュー画面に渡して表示
+            if (chkManualStart.Checked)
+            {
+                using (PreviewForm previewDlg = new PreviewForm(allExtractedPolygons))
+                {
+                    if (previewDlg.ShowDialog(this) == DialogResult.OK)
+                    {
+                        if (previewDlg.SelectedClickPoint != null)
+                        {
+                            currentSelectedClickPoint = previewDlg.SelectedClickPoint;
+                        }
+                        else
+                        {
+                            MessageBox.Show("起点が指定されなかったため、処理をキャンセルしました。", "中断", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        return; // キャンセル時中断
+                    }
+                }
+            }
+
+            // 出力処理の実行
             try
             {
-                DxfDocument? dxfDoc = !isLandXmlMode ? DxfDocument.Load(selectedFilePath) : null;
                 Dictionary<string, byte[]> individualZipFiles = new Dictionary<string, byte[]>();
                 List<Tuple<int, string, double, double, double>> combinedAllPoints = new List<Tuple<int, string, double, double, double>>();
                 int globalTenBan = 1;
@@ -237,7 +289,7 @@ namespace いきなりSIMAと外周線_ver2._0
 
                     for (int polyIdx = 0; polyIdx < outerPolygons.Count; polyIdx++)
                     {
-                        var ordered = ReorderClockwiseFromNortheast(outerPolygons[polyIdx]);
+                        var ordered = ReorderClockwiseFromNearestPoint(outerPolygons[polyIdx], currentSelectedClickPoint);
                         string prefix = outerPolygons.Count == 1 ? layerName : $"{layerName}-{polyIdx + 1}";
                         string outputFilename = outerPolygons.Count == 1 ? $"{layerName}.sim" : $"{layerName}-{polyIdx + 1}.sim";
 
@@ -256,7 +308,7 @@ namespace いきなりSIMAと外周線_ver2._0
 
                 if (individualZipFiles.Count == 0)
                 {
-                    MessageBox.Show("選択されたレイヤーから有効な図形（線分やポリゴン）が抽出できませんでした。\nレイヤー名や図面データの内容をご確認ください。", "データなし", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("選択されたレイヤーから有効な図形が抽出できませんでした。", "データなし", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -301,7 +353,7 @@ namespace いきなりSIMAと外周線_ver2._0
                     }
                 }
 
-                // ▼ LandXMLモードの場合のみ、サーフェス毎の個別のLandXML(ZIP)を出力する ▼
+                // 4. LandXML個別保存
                 if (isLandXmlMode)
                 {
                     if (MessageBox.Show("選択されたサーフェスごとに分割した個別LandXML(ZIP)を出力しますか？", "確認", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
@@ -312,14 +364,48 @@ namespace いきなりSIMAと外周線_ver2._0
 
                 if (failedBridgeLayers.Count > 0)
                 {
-                    string failMsg = "以下のレイヤーで小島ブリッジ結合処理に失敗したため、個別ポリゴンのまま出力しました:\n\n"
-                                   + string.Join("\n", failedBridgeLayers);
+                    string failMsg = "以下のレイヤーで小島ブリッジ結合処理に失敗したため、個別ポリゴンのまま出力しました:\n\n" + string.Join("\n", failedBridgeLayers);
                     MessageBox.Show(failMsg, "ブリッジ接続スキップ通知", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
                 MessageBox.Show("出力完了！", "完了", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex) { MessageBox.Show(ex.Message); }
+        }
+
+        private List<Tuple<double, double, double>> ReorderClockwiseFromNearestPoint(
+            List<Tuple<double, double, double>> pts,
+            Tuple<double, double>? targetCoord)
+        {
+            if (pts == null || pts.Count == 0) return pts;
+
+            int startIdx = 0;
+            if (targetCoord != null)
+            {
+                double minDistSq = double.MaxValue;
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    double dSq = Math.Pow(pts[i].Item1 - targetCoord.Item1, 2) + Math.Pow(pts[i].Item2 - targetCoord.Item2, 2);
+                    if (dSq < minDistSq)
+                    {
+                        minDistSq = dSq;
+                        startIdx = i;
+                    }
+                }
+            }
+            else
+            {
+                startIdx = pts.Select((p, i) => new { p, i }).OrderByDescending(x => x.p.Item1 + x.p.Item2).First().i;
+            }
+
+            var reordered = pts.Skip(startIdx).Concat(pts.Take(startIdx)).ToList();
+
+            if (CalculateSignedArea(reordered) < 0)
+            {
+                reordered = new[] { reordered[0] }.Concat(reordered.Skip(1).Reverse()).ToList();
+            }
+
+            return reordered;
         }
 
         private void ExportIndividualLandXmlZip(string xmlPath, List<string> selectedSurfaces, string shortKoujimei)
@@ -351,11 +437,7 @@ namespace いきなりSIMAと外周線_ver2._0
                     }
                 }
 
-                if (xmlFilesContent.Count == 0)
-                {
-                    MessageBox.Show("個別のサーフェス要素を抽出できませんでした。", "確認", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
+                if (xmlFilesContent.Count == 0) return;
 
                 using (SaveFileDialog sfdXmlZip = new SaveFileDialog()
                 {
@@ -488,26 +570,10 @@ namespace いきなりSIMAと外周線_ver2._0
             double sat = 1.0;
             double val = 1.0;
 
-            if (group == 0)
-            {
-                sat = 1.0;
-                val = 1.0;
-            }
-            else if (group == 1)
-            {
-                sat = 0.85;
-                val = 0.70;
-            }
-            else if (group == 2)
-            {
-                sat = 0.75;
-                val = 0.45;
-            }
-            else
-            {
-                sat = 0.8;
-                val = 0.30 + ((group * 0.08) % 0.25);
-            }
+            if (group == 0) { sat = 1.0; val = 1.0; }
+            else if (group == 1) { sat = 0.85; val = 0.70; }
+            else if (group == 2) { sat = 0.75; val = 0.45; }
+            else { sat = 0.8; val = 0.30 + ((group * 0.08) % 0.25); }
 
             return ColorFromHsv(hue, sat, val);
         }
@@ -545,36 +611,27 @@ namespace いきなりSIMAと外周線_ver2._0
 
                 foreach (var ts in originalDoc.TextStyles)
                 {
-                    if (!doc.TextStyles.Contains(ts.Name))
-                    {
-                        doc.TextStyles.Add((netDxf.Tables.TextStyle)ts.Clone());
-                    }
+                    if (!doc.TextStyles.Contains(ts.Name)) doc.TextStyles.Add((netDxf.Tables.TextStyle)ts.Clone());
                 }
 
                 foreach (var l in originalDoc.Layers)
                 {
-                    if (!selSet.Contains(l.Name.Trim()) && !doc.Layers.Contains(l.Name))
-                    {
-                        doc.Layers.Add((netDxf.Tables.Layer)l.Clone());
-                    }
+                    if (!selSet.Contains(l.Name.Trim()) && !doc.Layers.Contains(l.Name)) doc.Layers.Add((netDxf.Tables.Layer)l.Clone());
                 }
 
                 foreach (var entity in originalDoc.Entities.Lines)
                 {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Line)entity.Clone());
+                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Line)entity.Clone());
                 }
 
                 foreach (var entity in originalDoc.Entities.Polylines2D)
                 {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Polyline2D)entity.Clone());
+                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Polyline2D)entity.Clone());
                 }
 
                 foreach (var entity in originalDoc.Entities.Polylines3D)
                 {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Polyline3D)entity.Clone());
+                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Polyline3D)entity.Clone());
                 }
 
                 foreach (var entity in originalDoc.Entities.Texts)
@@ -582,10 +639,7 @@ namespace いきなりSIMAと外周線_ver2._0
                     if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
                     {
                         var copyText = (netDxf.Entities.Text)entity.Clone();
-                        if (copyText.Style != null && !doc.TextStyles.Contains(copyText.Style.Name))
-                        {
-                            doc.TextStyles.Add((netDxf.Tables.TextStyle)copyText.Style.Clone());
-                        }
+                        if (copyText.Style != null && !doc.TextStyles.Contains(copyText.Style.Name)) doc.TextStyles.Add((netDxf.Tables.TextStyle)copyText.Style.Clone());
                         doc.Entities.Add(copyText);
                     }
                 }
@@ -595,43 +649,16 @@ namespace いきなりSIMAと外周線_ver2._0
                     if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
                     {
                         var copyMText = (netDxf.Entities.MText)entity.Clone();
-                        if (copyMText.Style != null && !doc.TextStyles.Contains(copyMText.Style.Name))
-                        {
-                            doc.TextStyles.Add((netDxf.Tables.TextStyle)copyMText.Style.Clone());
-                        }
+                        if (copyMText.Style != null && !doc.TextStyles.Contains(copyMText.Style.Name)) doc.TextStyles.Add((netDxf.Tables.TextStyle)copyMText.Style.Clone());
                         doc.Entities.Add(copyMText);
                     }
                 }
 
-                foreach (var entity in originalDoc.Entities.Circles)
-                {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Circle)entity.Clone());
-                }
-
-                foreach (var entity in originalDoc.Entities.Arcs)
-                {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Arc)entity.Clone());
-                }
-
-                foreach (var entity in originalDoc.Entities.Hatches)
-                {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Hatch)entity.Clone());
-                }
-
-                foreach (var entity in originalDoc.Entities.Solids)
-                {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Solid)entity.Clone());
-                }
-
-                foreach (var entity in originalDoc.Entities.Inserts)
-                {
-                    if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0"))
-                        doc.Entities.Add((netDxf.Entities.Insert)entity.Clone());
-                }
+                foreach (var entity in originalDoc.Entities.Circles) if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Circle)entity.Clone());
+                foreach (var entity in originalDoc.Entities.Arcs) if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Arc)entity.Clone());
+                foreach (var entity in originalDoc.Entities.Hatches) if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Hatch)entity.Clone());
+                foreach (var entity in originalDoc.Entities.Solids) if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Solid)entity.Clone());
+                foreach (var entity in originalDoc.Entities.Inserts) if (!selSet.Contains(entity.Layer?.Name?.Trim() ?? "0")) doc.Entities.Add((netDxf.Entities.Insert)entity.Clone());
             }
 
             var sortedLayers = processedPolygons.Keys
@@ -641,23 +668,10 @@ namespace いきなりSIMAと外周線_ver2._0
                     bool hasNum = match.Success && int.TryParse(match.Value, out numVal);
                     bool hasAlpha = !string.IsNullOrEmpty(layerName) && layerName.Any(char.IsLetter);
                     double totalArea = processedPolygons[layerName].Sum(p => CalculateArea(p));
-                    return new
-                    {
-                        LayerName = layerName,
-                        HasNum = hasNum ? 0 : 1,
-                        NumVal = numVal,
-                        HasAlpha = hasAlpha ? 0 : 1,
-                        LayerNameStr = layerName,
-                        AreaDesc = -totalArea
-                    };
+                    return new { LayerName = layerName, HasNum = hasNum ? 0 : 1, NumVal = numVal, HasAlpha = hasAlpha ? 0 : 1, LayerNameStr = layerName, AreaDesc = -totalArea };
                 })
-                .OrderBy(x => x.HasNum)
-                .ThenBy(x => x.NumVal)
-                .ThenBy(x => x.HasAlpha)
-                .ThenBy(x => x.LayerNameStr)
-                .ThenBy(x => x.AreaDesc)
-                .Select(x => x.LayerName)
-                .ToList();
+                .OrderBy(x => x.HasNum).ThenBy(x => x.NumVal).ThenBy(x => x.HasAlpha).ThenBy(x => x.LayerNameStr).ThenBy(x => x.AreaDesc)
+                .Select(x => x.LayerName).ToList();
 
             double minX = double.MaxValue;
             double maxY = double.MinValue;
@@ -702,29 +716,17 @@ namespace いきなりSIMAと外周線_ver2._0
                 foreach (var polyPts in polygons)
                 {
                     var vertexes = polyPts.Select(pt => new Polyline2DVertex(pt.Item2, pt.Item1)).ToList();
-                    Polyline2D newPoly = new Polyline2D(vertexes, isClosed: true)
-                    {
-                        Layer = layer,
-                        Color = layerColor
-                    };
+                    Polyline2D newPoly = new Polyline2D(vertexes, isClosed: true) { Layer = layer, Color = layerColor };
                     doc.Entities.Add(newPoly);
                 }
 
                 var lineStart = new Vector2(startX, currentY);
                 var lineEnd = new Vector2(legendRightX, currentY);
-                var legendLine = new netDxf.Entities.Line(lineStart, lineEnd)
-                {
-                    Layer = layer,
-                    Color = layerColor
-                };
+                var legendLine = new netDxf.Entities.Line(lineStart, lineEnd) { Layer = layer, Color = layerColor };
                 doc.Entities.Add(legendLine);
 
                 var textPos = new Vector2(legendRightX + 1.0, currentY - (textHeight / 2.0));
-                var legendText = new netDxf.Entities.Text(layerName, textPos, textHeight)
-                {
-                    Layer = layer,
-                    Color = layerColor
-                };
+                var legendText = new netDxf.Entities.Text(layerName, textPos, textHeight) { Layer = layer, Color = layerColor };
                 doc.Entities.Add(legendText);
 
                 currentY -= rowPitch;
@@ -935,7 +937,6 @@ namespace いきなりSIMAと外周線_ver2._0
 
             string targetLayer = layer.Trim();
 
-            // 1. LINEの抽出
             foreach (var line in doc.Entities.Lines)
             {
                 string entityLayer = line.Layer?.Name?.Trim() ?? "";
@@ -946,7 +947,6 @@ namespace いきなりSIMAと外周線_ver2._0
                 }
             }
 
-            // 2. POLYLINE 2D の抽出
             foreach (var poly in doc.Entities.Polylines2D)
             {
                 string entityLayer = poly.Layer?.Name?.Trim() ?? "";
@@ -965,7 +965,6 @@ namespace いきなりSIMAと外周線_ver2._0
                 }
             }
 
-            // 3. POLYLINE 3D の抽出
             foreach (var poly3d in doc.Entities.Polylines3D)
             {
                 string entityLayer = poly3d.Layer?.Name?.Trim() ?? "";
@@ -1049,14 +1048,6 @@ namespace いきなりSIMAと外周線_ver2._0
             return Math.Abs(area / 2.0);
         }
 
-        private List<Tuple<double, double, double>> ReorderClockwiseFromNortheast(List<Tuple<double, double, double>> pts)
-        {
-            int maxIdx = pts.Select((p, i) => new { p, i }).OrderByDescending(x => x.p.Item1 + x.p.Item2).First().i;
-            var reordered = pts.Skip(maxIdx).Concat(pts.Take(maxIdx)).ToList();
-            if (CalculateSignedArea(reordered) < 0) reordered = new[] { reordered[0] }.Concat(reordered.Skip(1).Reverse()).ToList();
-            return reordered;
-        }
-
         private double CalculateSignedArea(List<Tuple<double, double, double>> pts)
         {
             double area = 0;
@@ -1072,6 +1063,8 @@ namespace いきなりSIMAと外周線_ver2._0
             return sb.Append("END").ToString();
         }
 
+        private void chkManualStart_CheckedChanged(object sender, EventArgs e) { }
+
         // GUI events
         private void lblFilePath_Click(object sender, EventArgs e) { }
         private void checkBox1_CheckedChanged(object sender, EventArgs e) { }
@@ -1081,20 +1074,15 @@ namespace いきなりSIMAと外周線_ver2._0
         private void chkBridgeIslands_CheckedChanged(object sender, EventArgs e) { }
         private void Form1_Load(object sender, EventArgs e) { }
 
-        // Windowsメッセージを監視し、タイトルバーの「？」ボタンクリックを直接検出する
         protected override void WndProc(ref Message m)
         {
             const int WM_SYSCOMMAND = 0x0112;
             const int SC_CONTEXTHELP = 0xF180;
 
-            // タイトルバーの「？」ボタンが押された瞬間をキャッチ
             if (m.Msg == WM_SYSCOMMAND && (m.WParam.ToInt32() & 0xFFF0) == SC_CONTEXTHELP)
             {
-                // ヘルプ要求イベント（Form1_HelpRequested）を直接呼び出してPDFを開く
                 HelpEventArgs args = new HelpEventArgs(System.Drawing.Point.Empty);
                 Form1_HelpRequested(this, args);
-
-                // Windows標準の「カーソルを？にする処理」をキャンセルして終了
                 return;
             }
 

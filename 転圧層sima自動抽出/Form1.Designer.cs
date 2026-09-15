@@ -31,6 +31,7 @@ namespace いきなりSIMAと外周線_ver2._0
             lblToleranceUnit = new Label();
             chkKeepZ = new CheckBox();
             chkBridgeIslands = new CheckBox();
+            chkManualStart = new CheckBox();
             ((System.ComponentModel.ISupportInitialize)numTolerance).BeginInit();
             SuspendLayout();
             // 
@@ -45,9 +46,9 @@ namespace いきなりSIMAと外周線_ver2._0
             // 
             chkLayerList.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             chkLayerList.FormattingEnabled = true;
-            chkLayerList.Location = new Point(12, 182);
+            chkLayerList.Location = new Point(12, 207);
             chkLayerList.Name = "chkLayerList";
-            chkLayerList.Size = new Size(273, 508);
+            chkLayerList.Size = new Size(273, 544);
             chkLayerList.TabIndex = 8;
             // 
             // lblFilePath
@@ -72,7 +73,7 @@ namespace いきなりSIMAと外周線_ver2._0
             // 
             // btnSelectAll
             // 
-            btnSelectAll.Location = new Point(12, 150);
+            btnSelectAll.Location = new Point(12, 175);
             btnSelectAll.Name = "btnSelectAll";
             btnSelectAll.Size = new Size(66, 26);
             btnSelectAll.TabIndex = 6;
@@ -82,7 +83,7 @@ namespace いきなりSIMAと外周線_ver2._0
             // 
             // btnDeselectAll
             // 
-            btnDeselectAll.Location = new Point(84, 150);
+            btnDeselectAll.Location = new Point(84, 175);
             btnDeselectAll.Name = "btnDeselectAll";
             btnDeselectAll.Size = new Size(66, 26);
             btnDeselectAll.TabIndex = 7;
@@ -94,10 +95,10 @@ namespace いきなりSIMAと外周線_ver2._0
             // 
             btnRun.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             btnRun.Font = new Font("メイリオ", 9F, FontStyle.Regular, GraphicsUnit.Point, 128);
-            btnRun.Location = new Point(180, 694);
+            btnRun.Location = new Point(180, 757);
             btnRun.Name = "btnRun";
             btnRun.Size = new Size(105, 29);
-            btnRun.TabIndex = 9;
+            btnRun.TabIndex = 10;
             btnRun.Text = "SIMA出力実行";
             btnRun.UseVisualStyleBackColor = true;
             btnRun.Click += btnRun_Click;
@@ -158,13 +159,24 @@ namespace いきなりSIMAと外周線_ver2._0
             chkBridgeIslands.UseVisualStyleBackColor = true;
             chkBridgeIslands.CheckedChanged += chkBridgeIslands_CheckedChanged;
             // 
+            // chkManualStart
+            // 
+            chkManualStart.AutoSize = true;
+            chkManualStart.Location = new Point(12, 150);
+            chkManualStart.Name = "chkManualStart";
+            chkManualStart.Size = new Size(246, 19);
+            chkManualStart.TabIndex = 11;
+            chkManualStart.Text = "SIMA座標の起点位置を図面で直接指定する";
+            chkManualStart.UseVisualStyleBackColor = true;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             AutoScroll = true;
             BackColor = SystemColors.GradientInactiveCaption;
-            ClientSize = new Size(304, 740);
+            ClientSize = new Size(304, 809);
+            Controls.Add(chkManualStart);
             Controls.Add(chkBridgeIslands);
             Controls.Add(lblToleranceUnit);
             Controls.Add(numTolerance);
@@ -182,7 +194,7 @@ namespace いきなりSIMAと外周線_ver2._0
             MinimizeBox = false;
             MinimumSize = new Size(320, 450);
             Name = "Form1";
-            Text = "いきなり SIMAと外周線 ver2.2";
+            Text = "いきなり SIMAと外周線 ver2.3";
             ((System.ComponentModel.ISupportInitialize)numTolerance).EndInit();
             ResumeLayout(false);
             PerformLayout();
@@ -202,5 +214,6 @@ namespace いきなりSIMAと外周線_ver2._0
         private System.Windows.Forms.Label lblToleranceUnit;
         private CheckBox chkKeepZ;
         private CheckBox chkBridgeIslands;
+        private CheckBox chkManualStart;
     }
 }

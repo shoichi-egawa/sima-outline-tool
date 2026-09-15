@@ -15,11 +15,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <None Remove="いきなりSIMAと外周ver2.1とりせつ.pdf" />
+	  <None Remove="いきなりSIMAと外周ver2.3とりせつ.pdf" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <EmbeddedResource Include="いきなりSIMAと外周ver2.1とりせつ.pdf" />
+	  <EmbeddedResource Include="いきなりSIMAと外周ver2.3とりせつ.pdf" />
 	</ItemGroup>
 
 	<ItemGroup>
